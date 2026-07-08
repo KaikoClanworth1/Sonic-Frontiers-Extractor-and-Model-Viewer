@@ -122,7 +122,7 @@ def _obj_name(name, cls):
 
 
 def build_fbx(meshes, bones=None, model_node_names=None, out_path=None,
-              texture_dir=None, up_axis="y"):
+              texture_dir=None, up_axis="y", embedded_png=None):
     """meshes: list of dicts with keys positions, normals, uvs (list of channels),
     colors, faces, material (name), material_textures (list of (semantic,dds)),
     skin (list of per-vertex [(boneName,weight),...]).
@@ -170,7 +170,8 @@ def build_fbx(meshes, bones=None, model_node_names=None, out_path=None,
         connections.child("C", PS("OP"), PL(child_id), PL(parent_id), PS(prop))
 
     def_counts = {"Geometry": 0, "Model": 0, "Material": 0, "Texture": 0,
-                  "Deformer": 0, "Pose": 0}
+                  "Video": 0, "Deformer": 0, "Pose": 0}
+    embedded_png = embedded_png or {}
 
     # --- bones: LimbNode models + world matrices ---
     bone_ids = []
@@ -320,27 +321,39 @@ def build_fbx(meshes, bones=None, model_node_names=None, out_path=None,
         def_counts["Material"] += 1
         connect_oo(mat_id, mdl_id)
 
-        # textures (reference by filename)
+        # textures — wire diffuse/normal/specular; embed PNG bytes if provided (self-contained FBX)
+        PROP = {"diffuse": "DiffuseColor", "normal": "NormalMap", "specular": "SpecularColor",
+                "emission": "EmissiveColor", "transparency": "TransparentColor"}
+        seen_prop = set()
         for semantic, dds in mesh.get("material_textures", []):
             if not dds:
                 continue
+            prop = PROP.get(semantic)
+            if not prop or prop in seen_prop:
+                continue
+            seen_prop.add(prop)
+            png = embedded_png.get(dds)
+            fname = (dds[:-4] + ".png") if (png and dds.endswith(".dds")) else dds
             tex_id = _new_id()
-            path = dds
-            if texture_dir:
-                import os
-                path = os.path.join(texture_dir, dds)
             tex = Node("Texture", PL(tex_id), PS(_obj_name(dds, "Texture")), PS(""))
             tex.child("Type", PS("TextureVideoClip"))
             tex.child("Version", PI(202))
             tex.child("TextureName", PS(_obj_name(dds, "Texture")))
-            tex.child("FileName", PS(path))
-            tex.child("RelativeFilename", PS(dds))
-            objects.add(tex)
-            def_counts["Texture"] += 1
-            prop = {"diffuse": "DiffuseColor", "normal": "NormalMap",
-                    "specular": "SpecularColor"}.get(semantic, "DiffuseColor")
+            if png:
+                vid_id = _new_id()
+                vid = Node("Video", PL(vid_id), PS(_obj_name(fname, "Video")), PS("Clip"))
+                vid.child("Type", PS("Clip"))
+                vid.child("UseMipMap", PI(0))
+                vid.child("Filename", PS(fname))
+                vid.child("RelativeFilename", PS(fname))
+                vid.add(Node("Content", ("R", png)))
+                objects.add(vid); def_counts["Video"] += 1
+                connect_oo(vid_id, tex_id)
+                tex.child("Media", PS(_obj_name(fname, "Video")))
+            tex.child("FileName", PS(fname))
+            tex.child("RelativeFilename", PS(fname))
+            objects.add(tex); def_counts["Texture"] += 1
             connect_op(tex_id, mat_id, prop)
-            break  # one (diffuse) texture is enough for validation
 
         # skin
         skin = mesh.get("skin")

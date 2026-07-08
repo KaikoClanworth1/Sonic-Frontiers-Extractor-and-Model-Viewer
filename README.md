@@ -102,16 +102,20 @@ set SFV_DUMP_UI=ui.png       :: render the full app UI (needs SFV_GAMEDIR set)
 SonicFrontiersViewer.exe
 ```
 
+## Textures & streaming
+
+Frontiers stores most character/prop textures as **NTSI stubs** in the `.pac` — the real pixels
+stream from the big `texture_streaming/*.ntsp` (PSTN) packages. This is **fully supported**: stubs
+are resolved by name-hash against the packages and reassembled into complete BCn `.dds`, so the
+viewer shows full-colour textures and the Python FBX exporter can **embed** them
+(`tools/export_fbx_textured.py` → self-contained FBX). Inline `.dds` are used directly.
+
 ## Known limitations
 
-- **Streamed textures (NTSI/NTSP).** Most *character* albedo textures aren't stored in the
-  character `.pac`; they're stubs that stream from the big `texture_streaming/*.ntsp` packages.
-  Those aren't resolved yet, so streamed characters render untextured. Textures stored inline
-  as real `.dds` (many stage/prop/terrain assets) display correctly. Resolving `.ntsp` streaming
-  is the top planned enhancement.
-- **Animations** (`.anm.pxd`) are **not** exported yet. Frontiers compresses animation tracks
-  with Nihilist's **ACL** library; the skeleton (bind pose) is fully supported, but decoding the
-  ACL track data requires vendoring `acl` and is planned for a future release.
+- **Animations** (`.anm.pxd`) are **not** exported yet. Frontiers compresses skeletal animation
+  tracks with Nihilist's **ACL** library; the skeleton (bind pose) is fully supported, but decoding
+  the ACL track data requires vendoring `acl` and is planned for a future release. (Material/UV
+  scroll animations — `.mat-anim` / `.uv-anim` — and particle effects `.cemt` are not exported.)
 
 ## Credits
 

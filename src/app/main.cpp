@@ -12,6 +12,7 @@
 #include "skeleton.h"
 #include "config.h"
 #include "fbx_writer.h"
+#include "ntsp.h"
 #include "renderer.h"
 #include "stb_image_write.h"
 
@@ -132,12 +133,25 @@ static bool load_model(App& app, const std::string& pac_path, const std::string&
     std::vector<std::pair<std::string, std::string>> mesh_diffuse;
     for (auto& msh : model.meshes) mesh_diffuse.push_back({msh.material, mat_diffuse.count(msh.material) ? mat_diffuse[msh.material] : ""});
 
-    // texture lookup from this pac's dds entries
-    auto tex = [ents_copy = ents](const std::string& dds) -> Bytes {
-        for (auto& e : ents_copy) if (e.ext == "dds" && e.name == dds) return e.data;
-        // some are stored without matching extension in name; try prefix
-        for (auto& e : ents_copy) if (e.ext == "dds" && e.name.find(dds) != std::string::npos) return e.data;
-        return {};
+    // streaming dir: <raw>\texture_streaming  (raw = game_folder or game_folder\image\x64\raw)
+    std::string raw = app.cfg.game_folder;
+    if (fs::exists(fs::path(raw) / "image" / "x64" / "raw"))
+        raw = (fs::path(raw) / "image" / "x64" / "raw").string();
+    std::string streaming = (fs::path(raw) / "texture_streaming").string();
+
+    // texture lookup: pull dds from this pac, resolving NTSI streamed stubs from .ntsp packages
+    auto tex = [ents_copy = ents, streaming](const std::string& dds) -> Bytes {
+        const PacEntry* found = nullptr;
+        for (auto& e : ents_copy) if (e.ext == "dds" && e.name == dds) { found = &e; break; }
+        if (!found) for (auto& e : ents_copy) if (e.ext == "dds" && e.name.find(dds) != std::string::npos) { found = &e; break; }
+        if (!found) return {};
+        if (is_ntsi(found->data)) {
+            std::string base = dds.size() > 4 && dds.substr(dds.size() - 4) == ".dds" ? dds.substr(0, dds.size() - 4) : dds;
+            Bytes full;
+            if (resolve_streamed_dds(found->data, base, streaming, full)) return full;
+            return {};   // streamed but unresolved -> untextured rather than garbage
+        }
+        return found->data;
     };
     app.renderer.set_model(model, tex, mesh_diffuse);
     size_t tv = 0; for (auto& m : model.meshes) tv += m.positions.size();
