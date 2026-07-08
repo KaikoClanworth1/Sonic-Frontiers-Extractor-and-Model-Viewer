@@ -317,6 +317,8 @@ def build_fbx(meshes, bones=None, model_node_names=None, out_path=None,
         mat.child("ShadingModel", PS("phong"))
         mp = mat.child("Properties70")
         mp.child("P", PS("DiffuseColor"), PS("Color"), PS(""), PS("A"), PD(0.8), PD(0.8), PD(0.8))
+        mp.child("P", PS("EmissiveColor"), PS("Color"), PS(""), PS("A"), PD(0), PD(0), PD(0))
+        mp.child("P", PS("EmissiveFactor"), PS("Number"), PS(""), PS("A"), PD(1.0))
         objects.add(mat)
         def_counts["Material"] += 1
         connect_oo(mat_id, mdl_id)
