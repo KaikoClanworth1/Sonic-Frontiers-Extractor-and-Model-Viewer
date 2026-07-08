@@ -318,8 +318,9 @@ bool build_fbx(const Model& model, const std::vector<SkelBone>& bones,
 
 bool export_pac_model_to_fbx(const std::vector<PacEntry>& entries, const std::string& basename,
                              const std::string& out_path, std::string* err) {
+    auto ismdl = [](const std::string& x) { return x == "model" || x == "terrain-model"; };
     const PacEntry* mfile = nullptr;
-    for (auto& e : entries) if (e.ext == "model" && (basename.empty() || e.name.find(basename) != std::string::npos)) { mfile = &e; break; }
+    for (auto& e : entries) if (ismdl(e.ext) && (basename.empty() || e.name.find(basename) != std::string::npos)) { mfile = &e; break; }
     if (!mfile) { if (err) *err = "no matching .model"; return false; }
     Model model;
     if (!parse_model(mfile->data, model, err)) return false;

@@ -46,6 +46,8 @@ struct App {
     std::thread index_thread;
 
     char search[128] = "";
+    bool models_only = false;                // filter browser + search to .model/.terrain-model
+    int sort_mode = 0;                        // 0 = by name, 1 = by type/extension
     std::string open_pac;                    // currently expanded pac
     std::vector<PacEntry> open_entries;      // its contents
     std::string loaded_label;
@@ -104,9 +106,12 @@ static void start_index(App& app) {
 static bool load_model(App& app, const std::string& pac_path, const std::string& basename, std::string* err) {
     std::vector<PacEntry> ents;
     if (!unpack_pac(pac_path, ents, err)) return false;
+    auto ismdl = [](const std::string& x) { return x == "model" || x == "terrain-model"; };
     const PacEntry* mfile = nullptr;
-    for (auto& e : ents) if (e.ext == "model" && e.name.find(basename) != std::string::npos) { mfile = &e; break; }
-    if (!mfile) for (auto& e : ents) if (e.ext == "model") { mfile = &e; break; }
+    // prefer an exact basename match, then any prefix match, then the first model
+    for (auto& e : ents) if (ismdl(e.ext) && e.name.substr(0, e.name.find_last_of('.')) == basename) { mfile = &e; break; }
+    if (!mfile) for (auto& e : ents) if (ismdl(e.ext) && e.name.find(basename) != std::string::npos) { mfile = &e; break; }
+    if (!mfile) for (auto& e : ents) if (ismdl(e.ext)) { mfile = &e; break; }
     if (!mfile) { if (err) *err = "no model in pac"; return false; }
 
     Model model;
@@ -199,23 +204,40 @@ static void draw_ui(App& app, int win_w, int win_h) {
     ImGui::BeginChild("left");
     ImGui::TextUnformatted("Search all files:");
     ImGui::SetNextItemWidth(-1);
-    ImGui::InputTextWithHint("##search", "e.g. chr_sonic, .model, amy", app.search, sizeof(app.search));
+    ImGui::InputTextWithHint("##search", "e.g. chr_sonic, portalgate, amy", app.search, sizeof(app.search));
+    ImGui::Checkbox("Models only", &app.models_only);
+    ImGui::SameLine(); ImGui::TextDisabled("|"); ImGui::SameLine();
+    ImGui::TextUnformatted("Sort:"); ImGui::SameLine();
+    ImGui::SetNextItemWidth(110); ImGui::Combo("##sort", &app.sort_mode, "Name\0Type\0");
     std::string q = app.search;
     std::transform(q.begin(), q.end(), q.begin(), ::tolower);
+    auto is_model_ext = [](const std::string& e) { return e == "model" || e == "terrain-model"; };
 
     if (!q.empty()) {
         std::lock_guard<std::mutex> lk(app.index_mtx);
-        int shown = 0;
-        ImGui::BeginChild("results");
+        // collect matches, then filter + sort so models are easy to find
+        std::vector<const IndexEntry*> matches;
         for (auto& ie : app.index) {
-            if (shown >= 500) { ImGui::TextDisabled("... (refine search)"); break; }
+            if (app.models_only && !is_model_ext(ie.ext)) continue;
             std::string ln = ie.name; std::transform(ln.begin(), ln.end(), ln.begin(), ::tolower);
-            if (ln.find(q) == std::string::npos) continue;
+            if (ln.find(q) != std::string::npos) matches.push_back(&ie);
+        }
+        std::sort(matches.begin(), matches.end(), [&](const IndexEntry* a, const IndexEntry* b) {
+            if (app.sort_mode == 1 && a->ext != b->ext) return a->ext < b->ext;
+            if (a->name != b->name) return a->name < b->name;
+            return a->pac < b->pac;
+        });
+        ImGui::Text("%zu match%s", matches.size(), matches.size() == 1 ? "" : "es");
+        ImGui::BeginChild("results");
+        int shown = 0;
+        for (const IndexEntry* iep : matches) {
+            const IndexEntry& ie = *iep;
+            if (shown >= 1000) { ImGui::TextDisabled("... %zu more (refine search)", matches.size() - shown); break; }
             shown++;
             std::string label = ie.name + "  [" + base_of(ie.pac) + "]##" + std::to_string((size_t)&ie);
             if (ImGui::Selectable(label.c_str())) {
-                if (ie.ext == "model") {
-                    std::string b = ie.name.substr(0, ie.name.size() - 6);
+                if (is_model_ext(ie.ext)) {
+                    std::string b = ie.name.substr(0, ie.name.find_last_of('.'));
                     std::string err;
                     if (!load_model(app, ie.pac, b, &err)) app.status = "Load failed: " + err;
                 } else {
@@ -240,21 +262,30 @@ static void draw_ui(App& app, int win_w, int win_h) {
                 }
                 if (open) {
                     if (app.open_pac == pac) {
-                        for (auto& e : app.open_entries) {
-                            std::string lbl = e.name + "##" + pac;
+                        // sorted + filtered view of this pac's entries
+                        std::vector<const PacEntry*> view;
+                        for (auto& e : app.open_entries)
+                            if (!app.models_only || is_model_ext(e.ext)) view.push_back(&e);
+                        std::sort(view.begin(), view.end(), [&](const PacEntry* a, const PacEntry* b) {
+                            if (app.sort_mode == 1 && a->ext != b->ext) return a->ext < b->ext;
+                            return a->name < b->name;
+                        });
+                        for (const PacEntry* ep : view) {
+                            const PacEntry& e = *ep;
+                            bool ismdl = is_model_ext(e.ext);
+                            std::string lbl = (ismdl ? "[M] " : "") + e.name + "##" + pac;
                             if (ImGui::Selectable(lbl.c_str())) {
-                                if (e.ext == "model") {
-                                    std::string b = e.name.substr(0, e.name.size() - 6);
+                                if (ismdl) {
+                                    std::string b = e.name.substr(0, e.name.find_last_of('.'));
                                     std::string err;
                                     if (!load_model(app, pac, b, &err)) app.status = "Load failed: " + err;
-                                }
-                                app.status = "Selected " + e.name;
+                                    else app.status = "Loaded " + e.name;
+                                } else app.status = "Selected " + e.name;
                             }
                             if (ImGui::BeginPopupContextItem()) {
                                 if (ImGui::MenuItem("Extract...")) extract_entry(app, e);
-                                if (e.ext == "model" && ImGui::MenuItem("Export FBX...")) {
-                                    export_fbx(app, pac, e.name.substr(0, e.name.size() - 6));
-                                }
+                                if (ismdl && ImGui::MenuItem("Export FBX..."))
+                                    export_fbx(app, pac, e.name.substr(0, e.name.find_last_of('.')));
                                 ImGui::EndPopup();
                             }
                         }
@@ -333,7 +364,11 @@ int main(int argc, char** argv) {
         std::string pac, base, err;
         if (mp) { std::string s = mp; auto bar = s.find('|'); pac = s.substr(0, bar); base = bar == std::string::npos ? "" : s.substr(bar + 1); }
         if (mp) { if (!load_model(app, pac, base, &err)) printf("load failed: %s\n", err.c_str()); }
-        if (getenv("SFV_SEARCH")) strncpy(app.search, getenv("SFV_SEARCH"), sizeof(app.search) - 1);
+        if (getenv("SFV_SEARCH")) {
+            strncpy(app.search, getenv("SFV_SEARCH"), sizeof(app.search) - 1);
+            build_index(&app);   // synchronous so the screenshot shows results
+        }
+        if (getenv("SFV_MODELS_ONLY")) app.models_only = true;
 
         if (dump_ui) {
             int W = 1400, H = 860;

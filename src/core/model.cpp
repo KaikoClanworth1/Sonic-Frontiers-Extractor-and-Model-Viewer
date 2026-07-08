@@ -1,5 +1,6 @@
 #include "model.h"
 #include "mirage.h"
+#include <unordered_map>
 
 namespace sf {
 
@@ -90,6 +91,29 @@ static std::vector<std::array<uint32_t, 3>> list_to_faces(const std::vector<uint
     return out;
 }
 
+// Fraction of edges shared by exactly 2 triangles (a coherent surface -> ~1).
+static double manifold_score(const std::vector<std::array<uint32_t, 3>>& faces) {
+    if (faces.empty()) return 0.0;
+    std::unordered_map<uint64_t, int> ec;
+    ec.reserve(faces.size() * 3);
+    for (auto& f : faces)
+        for (int e = 0; e < 3; e++) {
+            uint32_t i = f[e], j = f[(e + 1) % 3];
+            uint64_t k = i < j ? ((uint64_t)i << 32 | j) : ((uint64_t)j << 32 | i);
+            ec[k]++;
+        }
+    size_t shared = 0;
+    for (auto& kv : ec) if (kv.second == 2) shared++;
+    return (double)shared / ec.size();
+}
+
+// The Topology node (always 3) is unreliable; pick list vs strip by manifold coherence.
+static std::vector<std::array<uint32_t, 3>> choose_faces(const std::vector<uint16_t>& faces) {
+    auto ls = list_to_faces(faces);
+    auto st = strip_to_faces(faces);
+    return manifold_score(ls) >= manifold_score(st) ? ls : st;
+}
+
 static bool parse_mesh(const OffCtx& c, size_t mesh_off, int bone_width, uint32_t topology, Mesh& msh) {
     const uint8_t* d = c.d; size_t n = c.n;
     auto inb = [&](size_t p, size_t need) { return p != 0 && p + need <= n; };
@@ -147,7 +171,8 @@ static bool parse_mesh(const OffCtx& c, size_t mesh_off, int bone_width, uint32_
 
     std::vector<uint16_t> faces(face_count);
     for (uint32_t i = 0; i < face_count; i++) faces[i] = u16be(d, faces_ptr + i * 2);
-    msh.faces = (topology == 3) ? list_to_faces(faces) : strip_to_faces(faces);
+    msh.faces = choose_faces(faces);
+    (void)topology;
     return true;
 }
 

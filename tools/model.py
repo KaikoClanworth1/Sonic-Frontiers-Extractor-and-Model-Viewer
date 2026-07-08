@@ -309,12 +309,29 @@ def parse_model(data, is_terrain=None):
                 if not mesh_off:
                     continue
                 msh = _parse_mesh(data, mesh_off, base, bone_index_width)
-                if topology == 3:
-                    msh.faces = list_to_faces(msh._raw_faces)
-                else:
-                    msh.faces = strip_to_faces(msh._raw_faces)
+                msh.faces = _choose_faces(msh._raw_faces)
                 model.meshes.append(msh)
     return model
+
+
+def _manifold_score(faces):
+    """Fraction of edges shared by exactly 2 triangles (a coherent surface -> ~1)."""
+    if not faces:
+        return 0.0
+    ec = {}
+    for a, b, c in faces:
+        for i, j in ((a, b), (b, c), (c, a)):
+            k = (i, j) if i < j else (j, i)
+            ec[k] = ec.get(k, 0) + 1
+    return sum(1 for v in ec.values() if v == 2) / len(ec)
+
+
+def _choose_faces(raw):
+    """The Topology node value (always 3) is unreliable; pick list vs strip by which
+    interpretation forms the more coherent (manifold) surface."""
+    ls = list_to_faces(raw)
+    st = strip_to_faces(raw)
+    return ls if _manifold_score(ls) >= _manifold_score(st) else st
 
 
 def sanity(model):

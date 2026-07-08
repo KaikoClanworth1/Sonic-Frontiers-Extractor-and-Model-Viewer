@@ -9,13 +9,16 @@ Sonic Frontiers runs on Sega's **Hedgehog Engine 2 / "Needle"**. Its data is pac
 This project reverse-engineers those formats from scratch and validates every parser against
 the **entire retail game** (1,468 archives) and against Blender.
 
-![The app: archive browser, global search, and a textured 3D viewport](docs/images/app_screenshot.png)
+![The app: global search filtered to models, sorted, with a model in the 3D viewport](docs/images/app_screenshot.png)
 
 ## Features
 
 - **Archive browser** — the whole `image/x64/raw/` tree by category → `.pac` → contained files.
-- **Global name search** across every file in every archive (indexed in the background).
+- **Global name search** across every file in every archive (~128k files, indexed in the background),
+  with a **"Models only" filter** and **sort by name or type** so a model is one search + one click away.
 - **3D model viewport** — orbit / pan / zoom, per-mesh textures (see *Textures* below), wireframe toggle.
+  Triangle **strip vs list is auto-detected** per mesh (Frontiers' Topology flag is unreliable), so
+  models render with correct topology instead of a scrambled mess.
 - **One-click extract** of any contained file to disk.
 - **FBX export** — binary FBX 7.4 with meshes, UVs, normals, vertex colors, a full armature
   (skeleton) and skin weights. Imports cleanly into Blender / Maya / 3ds Max.
