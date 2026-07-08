@@ -1,0 +1,36 @@
+# ---- Copyrighted game files: NEVER commit ----
+/Sonic Frontiers/
+/SonicFrontiers/
+*.pac
+*.ntsp
+*.dds
+*.model
+*.terrain-model
+*.skl.pxd
+*.anm.pxd
+
+# ---- Build output ----
+/build/
+*.obj
+*.exe
+*.lib
+*.pdb
+*.zip
+
+# ---- Python prototyping env ----
+/.venv/
+__pycache__/
+*.pyc
+
+# ---- Editor / OS ----
+.vs/
+.vscode/
+*.user
+Thumbs.db
+desktop.ini
+
+# ---- Extracted assets / scratch ----
+/out/
+/extracted/
+*.fbx
+!docs/**
