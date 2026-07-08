@@ -12,16 +12,31 @@ import ntsp
 import fbx as fbxmod
 from PIL import Image
 
-STREAMING = r"E:\Games\steamapps\common\SonicFrontiers\image\x64\raw\texture_streaming"
+RAW = r"E:\Games\steamapps\common\SonicFrontiers\image\x64\raw"
+STREAMING = os.path.join(RAW, "texture_streaming")
+# extra pacs searched for shared textures not in the source pac (e.g. reflection maps)
+EXTRA_PACS = [os.path.join(RAW, "CommonObject.pac"),
+              os.path.join(RAW, "stage", "IslandObject.pac")]
+
+
+def _find_stub(dds_name, pac_entries):
+    ent = next((e for e in pac_entries if e.name == dds_name), None)
+    if ent is not None:
+        return ent.data
+    for pp in EXTRA_PACS:
+        if os.path.exists(pp):
+            for x in pacmod.unpack(pp):
+                if x.name == dds_name:
+                    return x.data
+    return None
 
 
 def resolve_png(dds_name, pac_entries):
     """Return (png_bytes, note) for a referenced .dds, resolving NTSI streaming."""
     base = dds_name[:-4] if dds_name.endswith(".dds") else dds_name
-    ent = next((e for e in pac_entries if e.name == dds_name), None)
-    if ent is None:
+    data = _find_stub(dds_name, pac_entries)
+    if data is None:
         return None, "not in pac"
-    data = ent.data
     if ntsp.is_ntsi(data):
         dds = ntsp.resolve_dds(data, base, STREAMING)
         if dds is None:
